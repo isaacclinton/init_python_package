@@ -8,6 +8,7 @@ if (!(Test-Path "$package_path\.python-version")) {
     Exit 1
 }
 
+$package_path = Resolve-Path $package_path | Select-Object -Expand Path
 $initial_dir = (Get-Location | Select-Object -Expand Path)
 Set-Location $package_path
 
@@ -18,20 +19,20 @@ if (!(Get-Command pyenv -ErrorAction SilentlyContinue)) {
     Write-Host "pyenv not found. Installing..."
     & .\install-pyenv.ps1  # Assuming install_pyenv.ps1 is in the same directory
 }
+else {
+    Write-Host "pyenv was found"
+}
 
 # Get the specified Python version from the .python-version file
 $python_version = (Get-Content "$package_path\.python-version" | Select-String -Pattern '\d+\.\d+\.\d+').Matches.Value
-Write-Host "Expected Python version: $python_version"
+Write-Host "Expected .venv version: $python_version"
 
 # Check if an existing .venv folder exists
 if (Test-Path "$package_path\.venv") {
-    Write-Host "Existing .venv folder exists"
 
     # Check the Python version in the .venv folder
     $venv_python_version = & "$package_path\.venv\Scripts\python" --version | Select-String -Pattern '\d+\.\d+\.\d+' | ForEach-Object { $_.Matches.Value }
-
     Write-Host "Existing .venv version: $venv_python_version"
-    # Exit 1
     if ($python_version -ne $venv_python_version) {
         Write-Host "Deleting existing virtual environment due to version mismatch."
         Remove-Item "$package_path\.venv" -Recurse
@@ -44,9 +45,18 @@ if (Test-Path "$package_path\.venv") {
 if (!(Test-Path "$package_path\.venv")) {
     # Install the specified Python version if not already installed
     if (!(pyenv versions | Select-String -Pattern "$python_version")) {
+        # Check if there are any Python versions installed at all
+        $set_global = !(pyenv versions)
+        
+        # Install the specified Python version
         Write-Host "Python $python_version does not exist in pyenv. Installing..."
-        pyenv install "$python_version"
+        pyenv install "$python_version" >$null 2>&1
         Write-Host "Installed Python $python_version in pyenv."
+        
+        if ($set_global) {
+            Write-Host "Setting version $python_version as global"
+            pyenv global $python_version >$null 2>&1
+        }
     }
 
     # Create the virtual environment
