@@ -1,0 +1,1 @@
+pwsh ./init_package.ps1

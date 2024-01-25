@@ -1,90 +1,96 @@
-# Get the package path from the first command-line argument
-$package_path = $args[0]
+. ".\functions.ps1"
 
+# TODO avoid relative paths, only works if the script is called in the project dir
 
-# Check if the package is valid
-if (!(Test-Path "$package_path\.python-version")) {
-    Write-Error "Error: Invalid package. Missing .python-version file."
-    Exit 1
-}
+$testing = $true
 
-$package_path = Resolve-Path $package_path | Select-Object -Expand Path
-$initial_dir = (Get-Location | Select-Object -Expand Path)
-Set-Location $package_path
-
-Write-Host "Checking pyenv installation"
-
-# Check if pyenv is installed
-if (!(Get-Command pyenv -ErrorAction SilentlyContinue)) {
-    Write-Host "pyenv not found. Installing..."
-    & .\install-pyenv.ps1  # Assuming install_pyenv.ps1 is in the same directory
+if ($testing) {
+    $package_path = Get-Package-Path
 }
 else {
-    Write-Host "pyenv was found"
+    # Get the package path from the first command-line argument
+    $package_path = $args[0]
 }
 
-# Get the specified Python version from the .python-version file
-$python_version = (Get-Content "$package_path\.python-version" | Select-String -Pattern '\d+\.\d+\.\d+').Matches.Value
-Write-Host "Expected .venv version: $python_version"
+$package_path = Resolve-Path $package_path
 
-# Check if an existing .venv folder exists
-if (Test-Path "$package_path\.venv") {
-
-    # Check the Python version in the .venv folder
-    $venv_python_version = & "$package_path\.venv\Scripts\python" --version | Select-String -Pattern '\d+\.\d+\.\d+' | ForEach-Object { $_.Matches.Value }
-    Write-Host "Existing .venv version: $venv_python_version"
-    if ($python_version -ne $venv_python_version) {
-        Write-Host "Deleting existing virtual environment due to version mismatch."
-        Remove-Item "$package_path\.venv" -Recurse
-        Write-Host "Deleted existing virtual environment due to version mismatch."
-    }
+Write-Host "checking package '$package_path'..."
+# Check if the package is valid
+if (!(Is-Valid-Package -Package $package_path)) {
+    Write-Error (Get-Invalid-Package-Error($package_path))
+    Exit 1
+}
+else {
+    $package_python_version = Get-Package-Expected-Python-Version($package_path)
+    Write-Host "    package is valid. expected python $package_python_version"
 }
 
+Write-Host "checking pyenv installation..."
+# $initial_dir = (Get-Location | Select-Object -Expand Path)
+# Set-Location $package_path
+if (Pyenv-Is-Installed) {
+    $pyenv_version = Get-Pyenv-Version
+    Write-Host "    pyenv $pyenv_version is installed"
+}
+else {
+    Write-Host "    pyenv is not installed. Installing..."
+    Install-Pyenv
+    Write-Host "    installed pyenv"
+}
 
-# Create the virtual environment if it doesn't exist
-if (!(Test-Path "$package_path\.venv")) {
-    # Install the specified Python version if not already installed
-    if (!(pyenv versions | Select-String -Pattern "$python_version")) {
-        # Check if there are any Python versions installed at all
-        $set_global = !(pyenv versions)
-        
-        # Install the specified Python version
-        Write-Host "Python $python_version does not exist in pyenv. Installing..."
-        pyenv install "$python_version" >$null 2>&1
-        Write-Host "Installed Python $python_version in pyenv."
-        
-        if ($set_global) {
-            Write-Host "Setting version $python_version as global"
-            pyenv global $python_version >$null 2>&1
+Write-Host "checking package $(Get-Package-Venv-Dir-Name)"
+if (Package-Venv-Exists($package_path)) {
+    Write-Host "    $(Get-Package-Venv-Dir-Name) folder exists in package"
+    if (Package-Venv-Is-Valid($package_path)) {
+        $venv_python_version = Get-Python-Version(Get-Package-Python-Path($package_path))
+        Write-Host "    $(Get-Package-Venv-Dir-Name) folder is valid. python $venv_python_version"
+        if (Package-Venv-Is-Expected($package_path)) {
+            Write-Host "    existing $(Get-Package-Venv-Dir-Name) is of the expected version"
+        }
+        else {
+            Write-Host "    existing $(Get-Package-Venv-Dir-Name) is not of the expected version. deleting..."
+            Delete-Package-Venv($package_path)
         }
     }
-
-    # Create the virtual environment
-    # pyenv local "$python_version"
-    if (Test-Path "$package_path\.python-version") {
-        Remove-Item "$package_path\.python-version"
+    else {
+        Write-Host "    $(Get-Package-Venv-Dir-Name) folder is not valid. deleting..."
+        Delete-Package-Venv($package_path)
     }
-    New-Item -Path "$package_path\.python-version" -ItemType "file" -Value "3.10.0" >$null 2>&1
-    
-    # Resets pyenv
-    pyenv rehash
-
-    Write-Host "Creating virtual environment with Python $python_version."
-    python -m venv "$package_path\.venv"
-
-    Write-Host "Upgrading pip"
-    & "$package_path\.venv\Scripts\python" -m pip install --upgrade pip >$null 2>&1
-    Write-Host "Created virtual environment with Python $python_version."
+}
+else {
+    Write-Host "    $(Get-Package-Venv-Dir-Name) folder does not exist in package"
 }
 
-
-# Activate the virtual environment
-# Install requirements from requirements.txt if it exists
-if (Test-Path "$package_path\requirements.txt") {
-    Write-Host "Installing requirements from requirements.txt"
-    & "$package_path\.venv\Scripts\pip.exe" install -r "$package_path\requirements.txt" >$null 2>&1
-    Write-Host "Installed requirements from requirements.txt."
+# Create the virtual environment if it doesn't exist
+if (!(Package-Venv-Exists($package_path))) {
+    Write-Host "creating $(Get-Package-Venv-Dir-Name)"
+    $expected_python_version = Get-Package-Expected-Python-Version($package_path)
+    $pyenv_is_empty = (Pyenv-Is-Empty)
+    Write-Host "    pyenv is empty $pyenv_is_empty"
+    if (Python-Version-Is-In-Pyenv($expected_python_version)) {
+        Write-Host "    python $expected_python_version is in pyenv. creating $(Get-Package-Venv-Dir-Name)..."
+        Make-Package-Venv($expected_python_version, $package_path)
+        Write-Host "    created $(Get-Package-Venv-Dir-Name)"
+    }
+    else {
+        Write-Host "    python $expected_python_version is not in pyenv. Installing..."
+        Install-Python-In-Pyenv($expected_python_version)
+        if ($pyenv_is_empty) {
+            Write-Host "    setting $expected_python_version as global"
+            Set-Global-Python-Version($expected_python_version)
+        }
+        Write-Host "    creating $(Get-Package-Venv-Dir-Name)..."
+        Make-Package-Venv($expected_python_version, $package_path)
+        Write-Host "    created $(Get-Package-Venv-Dir-Name)"   
+    }
 }
 
-Write-Host "Virtual environment initialized successfully."
-Set-Location $initial_dir
+Write-Host "checking requirements"
+# installing requirements from requirements.txt
+if (Requirements-File-Exists-In-Package($package_path)) {
+    Write-Host "    $(Get-Requirements-File-Name) exists in package. Installing requirements..."
+    Install-Requirements-In-Package($package_path)
+    Write-Host "    installed requirements"
+} else {
+    Write-Host "    $(Get-Requirements-File-Name) does not exist in package"
+}
