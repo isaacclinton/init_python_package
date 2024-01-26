@@ -15,6 +15,11 @@ function Get-Package-Path {
 }
 
 
+function Get-Internet-Access {
+    $is_connected = Test-Connection -ComputerName www.google.com -Quiet -Count 1
+    Write-Output $is_connected
+}
+
 
 function Get-Python-Version-File-Path {
 
@@ -75,7 +80,7 @@ function Get-Python-Version($Path) {
 
     if (Test-Path $Path) {
         try {
-            $venv_python_version = & $Path --version | Select-String -Pattern '\d+\.\d+\.\d+' | ForEach-Object { $_.Matches.Value }
+            $venv_python_version = ((& $Path --version) | Select-String -Pattern '\d+\.\d+\.\d+' | ForEach-Object { $_.Matches.Value })
             Write-Output $venv_python_version
         }
         catch {
@@ -89,8 +94,11 @@ function Get-Python-Version($Path) {
 
 
 function Install-Pyenv {
+    if (!(Get-Internet-Access)) {
+        Throw "No Internet Access"
+    }
     if ($IsWindows) {
-        & .\install-pyenv.ps1 # Assuming install_pyenv.ps1 is in the same directory
+        & .\install-pyenv.ps1 >$null 2>&1 # Assuming install_pyenv.ps1 is in the same directory
     }
     else {
         Invoke-Expression "chmod +x ./install-pyenv.sh" >$null 2>&1
@@ -170,6 +178,9 @@ function Python-Version-Is-In-Pyenv($python_version) {
 }
 
 function Install-Python-In-Pyenv($python_version) {
+    if (!(Get-Internet-Access)) {
+        Throw "No internet access"
+    }
     pyenv install "$python_version" >$null 2>&1
 }
 
@@ -209,7 +220,10 @@ function Make-Package-Venv($args1) {
     python -m venv (Get-Package-Venv-Path($package_path))
 
     Write-Host "    upgrading pip"
-    & Get-Package-Python-Path($package_path) -m pip install --upgrade pip >$null 2>&1
+    if (!(Get-Internet-Access)) {
+        Throw "No Internet Access"
+    }
+    & (Get-Package-Python-Path($package_path)) -m pip install --upgrade pip >$null 2>&1
     Write-Host "    upgraded pip"
     Set-Location $initial_dir
 }
@@ -227,6 +241,9 @@ function Requirements-File-Exists-In-Package($package_path) {
 }
 
 function Install-Requirements-In-Package($package_path) {
+    if (!(Get-Internet-Access)) {
+        Throw "No Internet Access"
+    }
     $python_path = Get-Package-Python-Path($package_path)
     $requirements_path = Get-Package-Requirements-File-Path($package_path)
 

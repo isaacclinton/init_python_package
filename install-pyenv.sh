@@ -24,6 +24,7 @@ else
 
   # Initialize pyenv for the current shell
   eval "$(pyenv init -)"
+  source ~/.bashrc
 fi
 
 # Optional: Install pyenv-virtualenv plugin

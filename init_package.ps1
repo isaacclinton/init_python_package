@@ -1,15 +1,18 @@
-. ".\functions.ps1"
 
-# TODO avoid relative paths, only works if the script is called in the project dir
+param (
+    [Switch] $Testing = $False
+)
 
-$testing = $true
+. (Join-Path -Path $PSScriptRoot -ChildPath "functions.ps1")
 
-if ($testing) {
-    $package_path = Get-Package-Path
-}
-else {
-    # Get the package path from the first command-line argument
-    $package_path = $args[0]
+
+# Get the package path from the first command-line argument
+$package_path = $args[0]
+
+
+if ($null -eq $package_path) {
+    Write-Error "no package path provided"
+    Exit 1
 }
 
 $package_path = Resolve-Path $package_path
@@ -34,7 +37,7 @@ if (Pyenv-Is-Installed) {
 }
 else {
     Write-Host "    pyenv is not installed. Installing..."
-    Install-Pyenv
+    Install-Pyenv 
     Write-Host "    installed pyenv"
 }
 
@@ -91,6 +94,7 @@ if (Requirements-File-Exists-In-Package($package_path)) {
     Write-Host "    $(Get-Requirements-File-Name) exists in package. Installing requirements..."
     Install-Requirements-In-Package($package_path)
     Write-Host "    installed requirements"
-} else {
+}
+else {
     Write-Host "    $(Get-Requirements-File-Name) does not exist in package"
 }
